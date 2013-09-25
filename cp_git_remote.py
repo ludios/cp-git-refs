@@ -5,15 +5,17 @@ Copies a remote in a local git repo, for the purpose of snapshotting its commit 
 and preventing them from being garbage-collected.
 """
 
-__version__ = '0.3'
+__version__ = '0.4'
 
+import os
 import datetime
 import subprocess
 import argparse
 
 
 def split_lines(s):
-	return s.rstrip("\r\n").replace("\r\n", "\n").split("\n")
+	x = s.rstrip("\r\n").replace("\r\n", "\n")
+	return x.split("\n") if x else []
 
 
 def get_remotes(git_exe):
@@ -37,8 +39,19 @@ def update_server_info(git_exe):
 	subprocess.check_call(["git", "update-server-info"])
 
 
+def is_bare_repo(): # (or cwd is in the .git/ of a non-bare repo)
+	return os.path.isfile("HEAD") and os.path.isfile("config") and \
+		os.path.isfile("packed-refs") and os.path.isdir("objects")
+
+
+def get_git_filename(name):
+	if is_bare_repo():
+		return name
+	return ".git/" + name
+
+
 def get_src_section_lines(src_section):
-	with open(".git/config", "rb") as f:
+	with open(get_git_filename("config"), "rb") as f:
 		captured_lines = []
 		for line in f:
 			if captured_lines:
@@ -56,7 +69,7 @@ def copy_git_config_section(src_section, dest_section):
 	lines = get_src_section_lines(src_section)
 	new_lines = lines[:]
 	new_lines[0] = lines[0].replace('[%s]' % (src_section,), '[%s]' % (dest_section,), 1)
-	with open(".git/config", "ab") as f:
+	with open(get_git_filename("config"), "ab") as f:
 		for line in new_lines:
 			f.write(line)
 
@@ -66,6 +79,10 @@ class DestinationAlreadyExists(Exception):
 
 
 class SourceDoesNotExist(Exception):
+	pass
+
+
+class MissingGitFile(Exception):
 	pass
 
 
@@ -107,7 +124,9 @@ def copy_git_remote(git_exe, src_remote, dest_remote):
 	copy_git_config_section('remote "%s"' % (src_remote,), 'remote "%s"' % (dest_remote_expanded,))
 
 	pairs = list(get_refs(git_exe, src_remote))
-	with open(".git/packed-refs", "ab") as f:
+	if not os.path.isfile(get_git_filename("packed-refs")):
+		raise MissingGitFile("No packed-refs file; is this a git repo?")
+	with open(get_git_filename("packed-refs"), "ab") as f:
 		for commit, refname in pairs:
 			new_refname = refname.replace(
 				"refs/remotes/%s/" % (src_remote,),
