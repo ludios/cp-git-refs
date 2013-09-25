@@ -5,7 +5,7 @@ Copies a remote in a local git repo, for the purpose of snapshotting its commit 
 and preventing them from being garbage-collected.
 """
 
-__version__ = '0.1'
+__version__ = '0.1.1'
 
 import subprocess
 import argparse
@@ -52,10 +52,10 @@ def get_src_section_lines(src_section):
 
 
 def copy_git_config_section(src_section, dest_section):
+	lines = get_src_section_lines(src_section)
+	new_lines = lines[:]
+	new_lines[0] = lines[0].replace('[%s]' % (src_section,), '[%s]' % (dest_section,), 1)
 	with open(".git/config", "ab") as f:
-		lines = get_src_section_lines(src_section)
-		new_lines = lines[:]
-		new_lines[0] = lines[0].replace('[%s]' % (src_section,), '[%s]' % (dest_section,), 1)
 		for line in new_lines:
 			f.write(line)
 
