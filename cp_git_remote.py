@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 
-# create new origin
-
-# git for-each-ref refs/remotes/NAME
-# assert everything in 2nd col is "commit"
-# for each commit, append to .git/packed-refs
-#	COMMITCOMMIT refs/remotes/NAME-YYYY-MM-DD.N/BRANCH_NAME
-
-# git update-server-info
-
 import subprocess
 import argparse
 
@@ -36,6 +27,30 @@ def get_refs(git_exe, remote):
 
 def update_server_info(git_exe):
 	subprocess.check_call(["git", "update-server-info"])
+
+
+def get_src_section_lines(src_section):
+	with open(".git/config", "rb") as f:
+		captured_lines = []
+		for line in f:
+			if captured_lines:
+				if line.startswith('['):
+					# This line is already the next section, so we're done
+					return captured_lines
+				else:
+					captured_lines.append(line)
+			if line.rstrip("\r\n ") == '[%s]' % (src_section,):
+				captured_lines.append(line)
+	return captured_lines
+
+
+def copy_git_config_section(src_section, dest_section):
+	with open(".git/config", "ab") as f:
+		lines = get_src_section_lines(src_section)
+		new_lines = lines[:]
+		new_lines[0] = lines[0].replace('[%s]' % (src_section,), '[%s]' % (dest_section,), 1)
+		for line in new_lines:
+			f.write(line)
 
 
 class DestinationAlreadyExists(Exception):
@@ -69,6 +84,8 @@ def main():
 
 	if args.dest_remote in remotes:
 		raise DestinationAlreadyExists("Destination remote %r already exists" % (args.dest_remote,))
+
+	copy_git_config_section('remote "%s"' % (args.src_remote,), 'remote "%s"' % (args.dest_remote,))
 
 	pairs = list(get_refs(git_exe, args.src_remote))
 	with open(".git/packed-refs", "ab") as f:
