@@ -5,7 +5,7 @@ Copies a remote in a local git repo, for the purpose of snapshotting its commit 
 and preventing them from being garbage-collected.
 """
 
-__version__ = '0.2'
+__version__ = '0.3'
 
 import datetime
 import subprocess
@@ -93,29 +93,12 @@ def get_expanded_remote(format_string, t, remotes):
 	)
 
 
-def main():
-	parser = argparse.ArgumentParser(
-		description="""
-	Copies a remote in a local git repo, for the purpose of snapshotting its commit IDs
-	and preventing them from being garbage-collected.
-	""")
-
-	parser.add_argument('-g', '--git', dest='git_exe', default='git',
-		help="path to git executable, default 'git'")
-
-	parser.add_argument('src_remote', help="The source remote name.")
-	parser.add_argument('dest_remote', help="""
-		The destination remote name.  You can include {YMDN} or {YMDHMS} for a
-		timestamp.""")
-
-	args = parser.parse_args()
+def copy_git_remote(git_exe, src_remote, dest_remote):
 	t = datetime.datetime.now()
-	git_exe = args.git_exe
 	remotes = get_remotes(git_exe)
-	src_remote = args.src_remote
-	dest_remote_expanded = get_expanded_remote(args.dest_remote, t, remotes)
+	dest_remote_expanded = get_expanded_remote(dest_remote, t, remotes)
 
-	if not args.src_remote in remotes:
+	if not src_remote in remotes:
 		raise SourceDoesNotExist("Source remote %r doesn't exist" % (src_remote,))
 
 	if dest_remote_expanded in remotes:
@@ -133,6 +116,25 @@ def main():
 			f.write("%s %s\n" % (commit, new_refname))
 
 	update_server_info(git_exe)
+
+
+def main():
+	parser = argparse.ArgumentParser(
+		description="""
+	Copies a remote in a local git repo, for the purpose of snapshotting its commit IDs
+	and preventing them from being garbage-collected.
+	""")
+
+	parser.add_argument('-g', '--git', dest='git_exe', default='git',
+		help="path to git executable, default 'git'")
+
+	parser.add_argument('src_remote', help="The source remote name.")
+	parser.add_argument('dest_remote', help="""
+		The destination remote name.  You can include {YMDN} or {YMDHMS} for a
+		timestamp.""")
+
+	args = parser.parse_args()
+	copy_git_remote(args.git_exe, args.src_remote, args.dest_remote)
 
 
 if __name__ == '__main__':
