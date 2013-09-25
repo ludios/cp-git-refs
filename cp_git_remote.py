@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+"""
+Copies a remote in a local git repo, for the purpose of snapshotting its commit IDs
+and preventing them from being garbage-collected.
+"""
+
+__version__ = '0.1'
+
 import subprocess
 import argparse
 
