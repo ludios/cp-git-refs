@@ -5,7 +5,7 @@ Copies a remote in a local git repo, for the purpose of snapshotting its commit 
 and preventing them from being garbage-collected.
 """
 
-__version__ = '0.4'
+__version__ = '0.5'
 
 import os
 import datetime
@@ -22,8 +22,8 @@ def get_remotes(git_exe):
 	return split_lines(subprocess.check_output([git_exe, "remote"]))
 
 
-def get_refs(git_exe, remote):
-	lines = split_lines(subprocess.check_output(["git", "for-each-ref", "refs/remotes/" + remote]))
+def get_refs(git_exe, base):
+	lines = split_lines(subprocess.check_output(["git", "for-each-ref", base]))
 	for line in lines:
 		try:
 			commit, rest = line.split(" ", 1)
@@ -50,28 +50,18 @@ def get_git_filename(name):
 	return ".git/" + name
 
 
-def get_src_section_lines(src_section):
-	with open(get_git_filename("config"), "rb") as f:
-		captured_lines = []
-		for line in f:
-			if captured_lines:
-				if line.startswith('['):
-					# This line is already the next section, so we're done
-					return captured_lines
-				else:
-					captured_lines.append(line)
-			if line.rstrip("\r\n ") == '[%s]' % (src_section,):
-				captured_lines.append(line)
-	return captured_lines
+def get_remote_url(git_exe, remote):
+	return subprocess.check_output([git_exe, "config", "remote.%s.url" % (remote,)]).rstrip()
 
 
-def copy_git_config_section(src_section, dest_section):
-	lines = get_src_section_lines(src_section)
-	new_lines = lines[:]
-	new_lines[0] = lines[0].replace('[%s]' % (src_section,), '[%s]' % (dest_section,), 1)
-	with open(get_git_filename("config"), "ab") as f:
-		for line in new_lines:
-			f.write(line)
+def add_git_remote(remote, url):
+	with open(get_git_filename("config"), "ab+") as f:
+		# If the file does not end with a newline, add one before writing our lines
+		f.seek(-1, 2)
+		if f.read(1) != "\n":
+			f.write("\n")
+		f.write('[remote "%s"]\n' % (remote,))
+		f.write("\turl = %s\n" % (url,))
 
 
 class DestinationAlreadyExists(Exception):
@@ -110,26 +100,23 @@ def get_expanded_remote(format_string, t, remotes):
 	)
 
 
-def copy_git_remote(git_exe, src_remote, dest_remote):
+def copy_git_remote(git_exe, src_base, dest_remote):
 	t = datetime.datetime.now()
 	remotes = get_remotes(git_exe)
 	dest_remote_expanded = get_expanded_remote(dest_remote, t, remotes)
 
-	if not src_remote in remotes:
-		raise SourceDoesNotExist("Source remote %r doesn't exist" % (src_remote,))
-
 	if dest_remote_expanded in remotes:
 		raise DestinationAlreadyExists("Destination remote %r already exists" % (dest_remote_expanded,))
 
-	copy_git_config_section('remote "%s"' % (src_remote,), 'remote "%s"' % (dest_remote_expanded,))
+	add_git_remote('remote "%s"' % (src_base,), 'remote "%s"' % (dest_remote_expanded,))
 
-	pairs = list(get_refs(git_exe, src_remote))
+	pairs = list(get_refs(git_exe, src_base))
 	if not os.path.isfile(get_git_filename("packed-refs")):
 		raise MissingGitFile("No packed-refs file; is this a git repo?")
 	with open(get_git_filename("packed-refs"), "ab") as f:
 		for commit, refname in pairs:
 			new_refname = refname.replace(
-				"refs/remotes/%s/" % (src_remote,),
+				"%s/" % (src_base,),
 				"refs/remotes/%s/" % (dest_remote_expanded,),
 				1)
 			f.write("%s %s\n" % (commit, new_refname))
@@ -140,20 +127,21 @@ def copy_git_remote(git_exe, src_remote, dest_remote):
 def main():
 	parser = argparse.ArgumentParser(
 		description="""
-	Copies a remote in a local git repo, for the purpose of snapshotting its commit IDs
-	and preventing them from being garbage-collected.
+	Snapshots a set of (presumably remote) refs in a local git repo.  This lets
+	you jump back in time when commits are force-pushed (even without a reflog),
+	and prevents the snapshotted commits from being garbage-collected.
 	""")
 
 	parser.add_argument('-g', '--git', dest='git_exe', default='git',
 		help="path to git executable, default 'git'")
 
-	parser.add_argument('src_remote', help="The source remote name.")
+	parser.add_argument('src_base', help="The source base name (e.g. 'refs/remotes/origin' or 'refs/current').")
 	parser.add_argument('dest_remote', help="""
 		The destination remote name.  You can include {YMDN} or {YMDHMS} for a
 		timestamp.""")
 
 	args = parser.parse_args()
-	copy_git_remote(args.git_exe, args.src_remote, args.dest_remote)
+	copy_git_remote(args.git_exe, args.src_base, args.dest_remote)
 
 
 if __name__ == '__main__':
