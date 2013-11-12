@@ -73,16 +73,19 @@ def copy_git_remote(git_exe, src_base, dest_base):
 	existing_refs = set(x[1] for x in pairs)
 	if not os.path.isfile(get_git_filename("packed-refs")):
 		raise MissingGitFile("No packed-refs file; is this a git repo?")
+
+	lines = []
+	for commit, refname in pairs:
+		if not refname.startswith(src_base + "/"):
+			continue
+		new_refname = refname.replace(src_base, dest_base_expanded, 1)
+		assert new_refname != refname, new_refname
+		if new_refname in existing_refs:
+			raise RefAlreadyExists(new_refname)
+		lines.append("%s %s\n" % (commit, new_refname))
+
 	with open(get_git_filename("packed-refs"), "ab") as f:
-		for commit, refname in pairs:
-			if not refname.startswith(src_base + "/"):
-				continue
-			new_refname = refname.replace(src_base, dest_base_expanded, 1)
-			assert new_refname != refname, new_refname
-			if new_refname in existing_refs:
-				# TODO: do this validation earlier, before writing anything
-				raise RefAlreadyExists(new_refname)
-			f.write("%s %s\n" % (commit, new_refname))
+		f.write("".join(lines))
 
 	update_server_info(git_exe)
 
